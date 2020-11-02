@@ -1,0 +1,355 @@
+use [HotelBeauRivage]
+go
+
+--1. Extraire la liste des clients ayant un num�ro de t�l�phone
+select distinct t_client.cli_id, t_client.cli_nom, t_client.cli_prenom from t_client
+inner join T_Telephone on t_client.cli_id = t_telephone.cli_id
+go
+
+--2. Clients sans num�ro de t�l�phone
+--ajout d'un client sans t�l�phone
+insert into T_CLIENT (CLI_ID, TIT_CODE, CLI_NOM, CLI_PRENOM, CLI_ENSEIGNE)
+values (101, 'M.', 'SIMPSON', 'Homer', 'Duff Beer')
+go
+--requete
+select distinct t_client.cli_id, t_client.cli_nom, t_client.cli_prenom from t_client
+left join T_Telephone on t_client.cli_id = t_telephone.cli_id
+where T_TELEPHONE.TEL_NUMERO is null
+go --OK !
+
+--3. Liste des clients avec leurs coordonn�es t�l�phoniques, d�e-mail et d�adresses postales
+select t_client.cli_nom, t_client.cli_prenom, t_telephone.tel_numero, t_email.eml_adresse, t_adresse.adr_cp, t_adresse.adr_ville
+from t_client
+left join t_telephone on t_client.cli_id = t_telephone.cli_id
+left join t_email on t_client.cli_id = t_email.cli_id
+left join t_adresse on t_client.cli_id = t_adresse.cli_id
+go
+
+--4. Synth�se du CA par mois de l�ann�e 2011 ainsi que le total de la TVA
+select month(FY.fac_pmt_date),
+	sum((FY.lif_montant - FY.lif_remise_montant) * FY.lif_qte) as CA_HT,
+	sum((FY.lif_montant - FY.lif_remise_montant) * FY.lif_qte * FY.lif_taux_tva / 100) as TVA
+from (
+	select LF.lif_montant, LF.lif_remise_montant, LF.lif_qte, LF.lif_taux_tva, F.fac_pmt_date
+	from t_ligne_facture as LF
+	inner join t_facture as F on LF.fac_id = F.fac_id
+	where year(F.fac_pmt_date) = '2011'
+	) as FY
+group by month(FY.fac_pmt_date)
+go --r�sultat tr�s inattendu...
+--investigation
+select LF.lif_montant, LF.lif_remise_montant, LF.lif_qte, LF.lif_taux_tva, F.fac_pmt_date,
+	(LF.lif_montant - LF.lif_remise_montant) * LF.lif_qte as CA_HT,
+	(LF.lif_montant - LF.lif_remise_montant) * LF.lif_qte * LF.lif_taux_tva / 100 as TVA
+from t_ligne_facture as LF
+inner join t_facture as F on LF.fac_id = F.fac_id
+where year(F.fac_pmt_date) = '2011' and LF.lif_remise_montant is not null
+go --on voit qu'il n'y a des remises qu'aux mois de fev et mars...
+--le reste du temps, le calcul renvoi null et �a marche pas
+--version avec une table temporaire (0 au lieu de null)
+declare @TableTemp table (
+	lif_montant money,
+	lif_remise_montant money,
+	lif_qte float,
+	lif_taux_tva float,
+	fac_pmt_date datetime
+	)
+insert into @TableTemp
+	select LF.lif_montant, LF.lif_remise_montant, LF.lif_qte, LF.lif_taux_tva, F.fac_pmt_date
+	from t_ligne_facture as LF
+	inner join t_facture as F on LF.fac_id = F.fac_id
+	where year(F.fac_pmt_date) = '2011'
+update @TableTemp set lif_remise_montant = 0 where lif_remise_montant is null
+select month(fac_pmt_date) as Num_Mois,
+	sum((lif_montant - lif_remise_montant) * lif_qte) as CA_HT,
+	sum((lif_montant - lif_remise_montant) * lif_qte * lif_taux_tva / 100) as TVA
+from @TableTemp
+group by month(fac_pmt_date)
+order by Num_Mois
+go --OK !
+--EDIT solution plus simple avec coalesce()
+select month(FY.fac_pmt_date) as Num_Mois,
+	sum((FY.lif_montant - FY.lif_remise_montant) * FY.lif_qte) as CA_HT,
+	sum((FY.lif_montant - FY.lif_remise_montant) * FY.lif_qte * FY.lif_taux_tva / 100) as TVA
+from (
+	select LF.lif_montant, coalesce(LF.lif_remise_montant,0) as lif_remise_montant,
+		LF.lif_qte, LF.lif_taux_tva, F.fac_pmt_date
+	from t_ligne_facture as LF
+	inner join t_facture as F on LF.fac_id = F.fac_id
+	where year(F.fac_pmt_date) = '2011'
+	) as FY
+group by month(FY.fac_pmt_date)
+order by Num_Mois
+go
+
+--5. Chambres qui communiquent entre elles
+--maj du jeu de donn�es (7 > 9 ; 12 > 14)
+/*d�j� pr�sent dans t_chambre.chb_communique*/
+--liste des chambres communicantes
+select chb_numero, chb_etage, chb_communique from t_chambre
+where chb_communique is not null
+go
+--variante
+select T1.chb_numero, T1.chb_etage, T1.chb_communique from t_chambre as T1
+inner join t_chambre as T2 on T1.chb_communique = T2.chb_numero
+go
+
+--6. �volution du prix moyen des chambres par rapport au tarif de r�f�rence (01/01/2010)
+select trf_date_debut,
+	sum(trf_chb_prix)/count(trf_chb_prix) as prix_moy,
+	sum(trf_chb_prix)/count(trf_chb_prix) / (
+		select sum(trf_chb_prix)/count(trf_chb_prix) as prix_ref
+		from tj_trf_chb
+		where trf_date_debut = '01/01/2010'
+		) as rapport
+from tj_trf_chb
+group by trf_date_debut
+go
+
+--7. Mois pour lesquels le taux d'occupation de l�h�tel a d�pass� les 2/3
+select count(*) from tj_chb_pln_cli
+select distinct chb_pln_cli_occupe from tj_chb_pln_cli
+select count(chb_pln_cli_occupe) from tj_chb_pln_cli where chb_pln_cli_occupe is not null
+go --toutes les lignes on un chb_pln_cli_occupe � 1 --EDIT c'est du bool
+--occupation journali�re
+select pln_jour as Mois, count(chb_pln_cli_occupe) * 100 / (select count(*) from t_chambre) as Occupation_pourct
+from tj_chb_pln_cli
+group by pln_jour
+go
+--suivi de l'occupation par mois
+select concat(year(pln_jour), '-', month(pln_jour)) as MoisAnnee,
+	sum(Chbs_Occup) * 100 / sum(Nb_Chb) as Occupation_prct
+from (
+	select pln_jour,
+		count(chb_pln_cli_occupe) as Chbs_Occup,
+		(select count(*) from t_chambre) as Nb_Chb
+	from tj_chb_pln_cli
+	group by pln_jour
+	) as OccupationJour
+group by month(pln_jour), year(pln_jour)
+order by year(pln_jour), month(pln_jour)
+go
+--version finale
+select concat(year(pln_jour), '-', month(pln_jour)) as MoisAnnee,
+	str(sum(convert(decimal(10,2),Chbs_Occup)) * 100 / sum(Nb_Chb),5,2) as Occupation_prct
+	--am�lioaration de l'affichage avec str pour limiter le nombre de d�cimales
+from (
+	select pln_jour,
+		count(chb_pln_cli_occupe) as Chbs_Occup,
+		(select count(*) from t_chambre) as Nb_Chb
+	from tj_chb_pln_cli
+	group by pln_jour
+	) as OccupationJour
+group by month(pln_jour), year(pln_jour)
+having sum(cast(Chbs_Occup as float)) * 100 / sum(Nb_Chb) > convert(float,200) / 3
+--having pour s�lectionner apr�s le group by + convert pour la limite 66.66666666
+order by year(pln_jour), month(pln_jour)
+go
+
+declare @NbChambres int = (select count(*) from t_chambre)
+select concat(year(pln_jour), '-', month(pln_jour)) as MoisAnnee,
+	str(sum(convert(decimal(10,2),Chbs_Occup)) * 100 / sum(Nb_Chb),5,2) as Occupation_prct
+	--am�lioaration de l'affichage avec str pour limiter le nombre de d�cimales
+from (
+	select pln_jour,
+		count(chb_pln_cli_occupe) as Chbs_Occup,
+		@NbChambres as Nb_Chb
+	from tj_chb_pln_cli
+	group by pln_jour
+	) as OccupationJour
+group by month(pln_jour), year(pln_jour)
+having (sum(cast(Chbs_Occup as float)) / sum(Nb_Chb)) > (2.0 / 3.0)
+--having pour s�lectionner apr�s le group by + convert pour la limite 66.66666666
+order by year(pln_jour), month(pln_jour)
+go
+
+--8. Liste des chambres o� le client BOUVIER n'a pas dormi en 2012
+--liste des chambres o� le client BOUVIER a dormi en 2012
+select CH.chb_id, CH.pln_jour from tj_chb_pln_cli as CH
+inner join t_client as C on C.cli_id = CH.cli_id
+where C.cli_nom = 'BOUVIER' and year(CH.pln_jour) = '2012'
+order by CH.pln_jour
+go
+--requ�te finale
+select chb_numero from t_chambre
+where chb_id not in (
+	select distinct CH.chb_id from tj_chb_pln_cli as CH
+	inner join t_client as C on C.cli_id = CH.cli_id
+	where C.cli_nom = 'BOUVIER' and year(CH.pln_jour) = '2012'
+	)
+go --OK !
+
+--9. Trouver l'�tage o� le volume de couchage est le plus important
+select top 1 sum(C.chb_couchage) as Places, C.chb_etage from t_chambre as C
+group by C.chb_etage
+order by Places desc
+go
+
+--10. Vue du taux d�occupation de chaque chambre par mois pour l�ann�e 2011
+--version fonction
+select concat(year(CH.pln_jour), '-', month(CH.pln_jour)) as MoisAnnee, CH.chb_id,
+	count(CH.chb_pln_cli_occupe) * 100 / CH.DayCount as Occupation_prct
+from (
+	select pln_jour, chb_pln_cli_occupe, DAY(EOMONTH(pln_jour)) as DayCount, chb_id
+	from tj_chb_pln_cli
+	) as CH
+group by CH.chb_id, month(CH.pln_jour), year(CH.pln_jour), CH.DayCount
+having year(pln_jour) = '2011'
+order by year(pln_jour), month(pln_jour)
+go
+--version vue
+create or alter view OccupationChambresMensuelle
+as
+	select concat(year(CH.pln_jour), '/', month(CH.pln_jour)) as MoisAnnee, CH.chb_id,
+		convert(float,count(CH.chb_pln_cli_occupe)) / CH.DayCount as Occupation_prct
+	from (
+		select pln_jour, chb_pln_cli_occupe, DAY(EOMONTH(pln_jour)) as DayCount, chb_id
+		from tj_chb_pln_cli
+		) as CH
+	group by CH.chb_id, month(CH.pln_jour), year(CH.pln_jour), CH.DayCount
+	having year(pln_jour) = '2011'
+go
+--test
+select * from OccupationChambresMensuelle
+go
+
+--11. Vue du taux d�occupation par chambre pour l�ann�e 2011
+create or alter view OccupationChambresAnnuelle
+as
+	select CH.chb_id, convert(float,count(CH.chb_pln_cli_occupe)) / 365.25 as Occupation
+	from tj_chb_pln_cli as CH
+	group by CH.chb_id, year(CH.pln_jour)
+	having year(CH.pln_jour) = '2011'
+go
+--test
+select * from OccupationChambresAnnuelle
+go
+
+--12. Proc�dure pour supprimer un client (et ses coordonn�es) sauf s'il est associ� � une facture
+--liste des clients qui ont des factures
+select distinct cli_id from t_facture order by cli_id
+go --ils ont tous des factures sauf Homer...
+--v1 (marche pas)
+create or alter procedure SuppressionClient(@Client int)
+as
+	if exists (
+		select cli_id from t_facture
+		where cli_id = @Client
+		)
+		begin
+			return -101
+		end
+	delete C,A,T,E --Cette notation n'est PAS valable pour SQL Server
+	from t_client as C 
+	inner join t_adresse as A on A.cli_id = C.cli_id
+	inner join t_telephone as T on T.cli_id = C.cli_id
+	inner join t_email as E on E.cli_id = C.cli_id
+	where cli_id = @Client
+	return 0;
+go
+--v2
+create or alter procedure SuppressionClient @Client int
+as
+	if not exists (select * from t_client where cli_id = @Client)
+		begin
+			return -101 --le client n'existe pas
+		end
+	if exists (select cli_id from t_facture where cli_id = @Client)
+		begin
+			return -102 --le client a des factures associ�es
+		end
+	delete from t_adresse where cli_id = @Client
+	delete from t_telephone where cli_id = @Client
+	delete from t_email where cli_id = @Client
+	delete from t_client where cli_id = @Client
+	return 0; --suppression r�ussie
+go
+--test
+declare @test int
+exec @test = SuppressionClient @Client = 2
+print (cast(@test as varchar))
+go --(-102)
+declare @test int
+exec @test = SuppressionClient @Client = 102
+print (cast(@test as varchar))
+go --(-101)
+declare @test int
+exec @test = SuppressionClient @Client = 101
+print (cast(@test as varchar))
+go
+/*
+(1 lignes affect�es)
+(0 lignes affect�es)
+(0 lignes affect�es)
+(0 lignes affect�es)
+0
+*/ --OK !
+
+--13. Trigger interdisant d'enregistrer un nombre de personnes > places de couchage dans une chambre
+--utiliser le rollback pour invalider la transaction
+create or alter trigger DepassementCapacite on tj_chb_pln_cli
+for insert, update
+as
+	begin
+		if (select chb_pln_cli_nb_pers from inserted) > (select C.chb_couchage from inserted as I 
+		inner join t_chambre as C on I.chb_id = C.chb_id
+		)
+		begin
+			raiserror ('Nombre de couchages sup�rieur � la capacit� de la chambre', 16, 1)
+			rollback transaction
+		end
+	end
+go
+--test (apr�s r�insertion Homer)
+insert into tj_chb_pln_cli (chb_id, pln_jour, cli_id, chb_pln_cli_nb_pers, chb_pln_cli_reserve, chb_pln_cli_occupe)
+values (1, getdate(), 101, 10, 1, 1)
+go --marche PAS � cause d'une s�curit� sur le planning... on va faire un update...
+update tj_chb_pln_cli set chb_pln_cli_nb_pers = 10
+where chb_id = 1 and cli_id = 67 and pln_jour = '02/01/2010'
+go --provoque une erreur "la sous-requ�te a retourn� plusieurs valeurs"
+drop trigger DepassementCapacite
+go --apr�s �a, �a marche, c'est le trigger qui est mauvais
+--apr�s correction du trigger :
+update tj_chb_pln_cli set chb_pln_cli_nb_pers = 10
+where chb_id = 1 and cli_id = 67 and pln_jour = '02/01/2010'
+go --Erreur pr�vue - OK !
+update tj_chb_pln_cli set chb_pln_cli_nb_pers = 2
+where chb_id = 1 and cli_id = 67 and pln_jour = '02/01/2010'
+go
+select top 10 * from tj_chb_pln_cli
+go --Update OK !
+insert into tj_chb_pln_cli (chb_id, pln_jour, cli_id, chb_pln_cli_nb_pers, chb_pln_cli_reserve, chb_pln_cli_occupe)
+values (1, '04/01/2010', 101, 10, 1, 1)
+go --Erreur pr�vue - OK !
+
+--14. Taux d�occupation sur la base de donn�es pr�cises
+--D�j� fait !
+--j'avais utilis� la fonction eomonth qui
+--permet de donner le nombre de jours du mois correspondant � une date pr�cise
+select day(eomonth(getdate()))
+go --30
+select day(eomonth('02/02/2019'))
+go --28
+select day(eomonth('02/02/2020'))
+go --29 - OK !
+
+--15. Fonction table : taux d�occupation par mois en fonction du nombre de jours du mois
+create or alter function TauxOccupation (@Year int)
+returns table
+as
+return (
+	select concat(year(CH.pln_jour), '/', month(CH.pln_jour)) as MoisAnnee, CH.chb_id,
+		convert(float,count(CH.chb_pln_cli_occupe)) / CH.DayCount as Occupation_prct
+	from (
+		select pln_jour, chb_pln_cli_occupe, DAY(EOMONTH(pln_jour)) as DayCount, chb_id
+		from tj_chb_pln_cli
+		) as CH
+	group by CH.chb_id, month(CH.pln_jour), year(CH.pln_jour), CH.DayCount
+	having year(pln_jour) = @Year
+	)
+go
+--test
+select * from TauxOccupation ('2011')
+go --OK
+select * from TauxOccupation ('2013')
+go --rien - OK !

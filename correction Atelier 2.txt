@@ -1,0 +1,133 @@
+
+-- Description:	ConversionDevise
+
+CREATE FUNCTION [dbo].[ConversionDevise] 
+(
+	-- Add the parameters for the function here
+	@ValeurSource		decimal(28,5),
+	@DeviseRef			char(3)=null,
+	@PaysCible			char(2)=null,
+	@DeviseCible		char(3)=null,
+	@DateValeur			datetime=null
+)
+
+RETURNS decimal(28,5)
+AS
+BEGIN
+	
+	DECLARE @ValeurConvertie decimal(28,5)
+	DECLARE @DEVISE_CIBLE_DETERMINEE CHAR(3)
+	DECLARE @DateConversion datetime;
+	DECLARE @TauxConversion decimal(28,5)
+	
+	-- Si pas de devise de référence, alors USD
+	
+	if (@DeviseRef is null) set @DeviseRef = 'USD';
+	
+	-- Détermination de la devise cible
+	-- Si condition d'erreur Null
+		
+	set @DEVISE_CIBLE_DETERMINEE =
+		case
+		when (@PaysCible IS null and @DeviseCible IS null) 
+			then null
+		when ((@PaysCible IS  not null and @DeviseCible IS not null) 
+		and @PaysCible not IN (select idPays2 from dbo.Pays where @DeviseCible=idDevise)) 
+			then null
+		WHEN (@DeviseCible IS NULL) THEN (SELECT idDevise FROM Pays WHERE idPays2=@PaysCible)
+		ELSE @DeviseCible			
+		end
+	
+	-- Si la fonction ne peut exécuter les opérations, elle renvoie null 
+	
+	IF @DEVISE_CIBLE_DETERMINEE	IS NULL RETURN NULL
+	
+	 -- Date application du taux de conversion.
+	 -- Par défaut la date du jour 
+	 
+	IF @DateValeur IS NULL SET @DateValeur = GETDATE()
+	
+	-- Récupération du taux dont date application <= DateValeur
+	select TOP 1 @TauxConversion = TauxConversion, @DateConversion= DATEAPPLICATION
+	FROM TauxConversion WHERE @DeviseRef=IdDeviseSource 
+											AND @DEVISE_CIBLE_DETERMINEE=IdDeviseCible
+											AND DATEAPPLICATION <= @DateValeur
+											ORDER BY DateApplication DESC
+	
+	-- Si aucun taux trouvé, prendre la première valeur connue
+	IF (@TauxConversion is null) 
+	Begin
+		select TOP 1 @TauxConversion = TauxConversion FROM TauxConversion 
+				WHERE @DeviseRef=IdDeviseSource 
+				AND @DEVISE_CIBLE_DETERMINEE=IdDeviseCible
+				ORDER BY DateApplication ASC
+		
+		--Autre forme d'écriture
+		select @TauxConversion = TauxConversion FROM TauxConversion 
+				WHERE @DeviseRef=IdDeviseSource 
+				AND @DEVISE_CIBLE_DETERMINEE=IdDeviseCible 
+				AND DateApplication = (select MIN(DateApplication) 
+									   from TauxConversion WHERE @DeviseRef=IdDeviseSource 
+									   AND @DEVISE_CIBLE_DETERMINEE=IdDeviseCible)
+									   
+		
+	End				
+	-- Le taux peut encore être nul si aucun taux n'est connu pour la devise cible
+	-- le calcul renverra alors la valeur nulle
+	
+	SET @ValeurConvertie = round(@ValeurSource * @TauxConversion,3)
+	
+	-- Return the result of the function
+	RETURN @ValeurConvertie
+
+END
+GO
+-- Catalogue
+
+CREATE FUNCTION [dbo].[Catalogue_Devise]
+(	
+	@idPays2 char(2)
+)
+RETURNS TABLE 
+AS
+RETURN 
+(
+	
+	SELECT Products.*,
+	dbo.ConversionDevise(unitprice,null,@idpays2,null,null) as PrixDevise,
+	(select iddevise from Pays where idpays2=@idPays2) as Devise 
+	From Products
+)
+GO
+-- Vue CA PAYS Annee
+
+CREATE VIEW [dbo].[CA_Pays_Annee]
+AS
+SELECT dbo.Customers.IdPays2, dbo.Pays.LibellePays, 
+			   YEAR(dbo.Orders.OrderDate) AS Annee, 
+               ROUND(SUM(dbo.[Order Details].Quantity * 
+               (dbo.[Order Details].UnitPrice - dbo.[Order Details].UnitPrice * dbo.[Order Details].Discount)), 3) AS CA 
+              
+FROM  dbo.Customers INNER JOIN
+               dbo.Orders ON dbo.Customers.CustomerID = dbo.Orders.CustomerID INNER JOIN
+               dbo.[Order Details] ON dbo.Orders.OrderID = dbo.[Order Details].OrderID INNER JOIN
+               dbo.Pays ON dbo.Customers.IdPays2 = dbo.Pays.idPays2
+GROUP BY dbo.Customers.IdPays2, YEAR(dbo.Orders.OrderDate), dbo.Pays.LibellePays
+
+-- CA avec conversion 
+
+CREATE PROCEDURE [dbo].[CA_Devise_Annee]
+ @Annee int
+   As
+BEGIN
+
+select V.IdPays2,V.LibellePays,
+Annee,
+CA,
+dbo.ConversionDevise(CA,'USD',null,p.idDevise,null) as CADevise,
+idDevise
+ from CA_Pays_Annee as V inner join Pays P
+		on V.IdPays2 = P.idPays2
+		where Annee = @Annee
+
+END

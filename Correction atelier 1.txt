@@ -1,0 +1,194 @@
+USE [ComptoirAnglaisV1]
+GO
+/****** Object:  StoredProcedure [dbo].[Recovery]    Script Date: 11/09/2018 09:49:54 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+-- Authentification de l'utilisateur
+CREATE PROCEDURE [dbo].[PS_Utilisateur_Authentifier] 
+-- Paramètres Entrée : IDUtilisateur et Mot de Passe
+-- 
+@IDUtilisateur as nvarchar(50),
+@MotPasseSaisi as nvarchar(50)=null
+AS
+BEGIN
+	DECLARE @IDUser nvarchar(50), @MotPasse nvarchar(50), 
+	@NbreEssais as Int,@CompteBloque as bit
+	SET NOCOUNT ON;
+	-- Récupération des valeurs du compte
+	SELECT @IDUser=IDUtilisateur,@MotPasse = MotPasse,
+	@NbreEssais= NbreEssaisInfructueux,
+	@CompteBloque=CompteBloque FROM UtilisateurS 
+	WHERE IDUtilisateur=@Idutilisateur
+				
+	IF @IDUser is null RETURN -101;
+	-- Compte bloqué ?	
+	IF @CompteBloque = 1 RETURN -102;	
+	-- Mot Passe invalide
+	IF @MotPasseSaisi is null OR @MotPasse != @MotPasseSaisi 
+	BEGIN
+		SET @NbreEssais += 1
+		IF @NbreEssais >= 3 
+		BEGIN 
+		UPDATE Utilisateurs SET CompteBloque = 1, 
+		NbreEssaisInfructueux=@NbreEssais WHERE IDUtilisateur=@Idutilisateur	
+		
+		END	
+		ELSE
+		BEGIN 
+		UPDATE Utilisateurs SET NbreEssaisInfructueux=@NbreEssais WHERE IDUtilisateur=@Idutilisateur
+		END
+	RETURN -103
+	END
+UPDATE Utilisateurs SET NbreEssaisInfructueux=0,DateDerniereConnexion=GETDATE()	
+WHERE IDUtilisateur = @IDUtilisateur;
+RETURN 0
+END		
+
+GO
+
+
+
+-- Récupération du mot de passe
+CREATE procedure [dbo].[Recovery]
+@IDUtilisateur nvarchar(50),
+@answer nvarchar(510),
+@recovery nvarchar(50) out
+AS
+	SET NOCOUNT ON
+BEGIN
+	declare @nospaceGivenAnswer nvarchar(510) = REPLACE(@answer,' ','');
+	declare @nospaceRealAnswer nvarchar(510) = REPLACE((Select Reponse 
+			from Utilisateurs where @IDUtilisateur=IDUtilisateur),' ','');
+
+	if (select CompteBloque from Utilisateurs 
+		where IDUtilisateur=@IDUtilisateur)=1 
+	begin return -101 end
+	if  @answer is null 
+	begin return -102 end
+
+
+	if @nospaceRealAnswer=@nospaceGivenAnswer
+	begin set @recovery =	(Select MotPasse from Utilisateurs 
+							where @IDUtilisateur=IDUtilisateur) end
+	else begin set @recovery = 'Mauvaise réponse' end
+END
+GO
+
+-- Ajout d'un nouvel utilisateur
+
+Create procedure NouvelUtilisateur
+		(
+		@userLastName nvarchar(250),
+		@userFirstName nvarchar(250),
+		@password nvarchar(50),
+		@userMail nvarchar(255),
+		@CustomerID varchar (5)
+		)
+as
+begin
+
+declare @userID nvarchar(50)
+declare @nbreEssais int = 0
+declare @compteBloque bit = 0
+declare @dateDerniereConnexion datetime = Null
+declare @userQuestion varchar(255) = ''
+declare @userReponse varchar(255) = ''
+
+if LEN(@password) < 5 or @password is null
+	begin
+	return -101
+	end
+	
+set @userID = @userLastName;
+
+if (@userMail like '_%@%.%')
+	begin
+	declare @posArobase char(5) = (select CHARINDEX('@', @userMail))
+	declare @str1 varchar(250) = substring(@userMail, 1, @posArobase - 1)
+	declare @str2 varchar(250) = substring(@userMail, @posArobase + 1, LEN(@userMail))
+	end
+	else
+		begin
+		return -102
+		end
+
+if LEN(@str1) > 64 or LEN(@str2) > 188 or @userMail is null or LEN(@userMail) > 255
+	begin
+	return -102
+	end
+
+insert into Utilisateurs
+		([IDUtilisateur],
+		 [NomUtilisateur],
+		 [PrenomUtilisateur],
+		 [MotPasse], 
+		 [NbreEssaisInfructueux], 
+		 [CompteBloque], 
+		 [DateDerniereConnexion], 
+		 [CompteMessagerie], 
+		 [Question], 
+		 [Reponse],
+		 [CustomerID]
+		 ) values 
+		 (@userID,
+		  @userLastName ,
+		  @userFirstName ,
+		  @password ,
+		  @nbreEssais ,
+		  @compteBloque ,
+		  @dateDerniereConnexion ,
+		  @userMail ,
+		  @userQuestion,
+		  @userReponse,
+		  @CustomerID)
+end
+GO
+-- Changement de mot de passe
+CREATE PROCEDURE [dbo].[PS_Utilisateur_ChangerMotDePasse] 
+(@IDUtilisateur nvarchar(50),
+@AncienMotPasse  nvarchar(50),
+@NouveauMotPasse nvarchar(50),
+@Message nvarchar(50) OUTPUT)
+
+AS
+BEGIN
+DECLARE @IDUser nvarchar(50)
+DECLARE @MotPasse nvarchar(50)
+DECLARE @CompteBloque as bit
+
+SET NOCOUNT ON;
+-- Récupération des valeurs du compte
+SELECT @IDUser=IDUtilisateur,@MotPasse = MotPasse,@CompteBloque=CompteBloque FROM UtilisateurS WHERE IDUtilisateur=@Idutilisateur
+	-- Compte inconnu ?			
+	IF @IDUser is null 
+	BEGIN
+	SET @Message = 'Le compte est inconnu'
+	RETURN -101;
+	END
+	
+	-- Compte bloqué ?	
+	IF @CompteBloque = 1 
+	BEGIN
+		SET @Message = 'Le compte est bloqué'
+		return -102 
+	END
+	-- Mot Passe invalide
+	IF @AncienMotPasse is null 
+	OR @AncienMotPasse != @MotPasse 
+	OR  @NouveauMotPasse = @AncienMotPasse 
+	OR LEN(@NouveauMotPasse)<6
+	BEGIN
+		SET @Message = 'Le mot de passe est invalide'
+		RETURN -103
+	END
+	
+UPDATE dbo.Utilisateurs
+SET MotPasse = @NouveauMotPasse
+where IDUtilisateur = @IDUtilisateur
+
+SET @Message = 'Mot de passe changé'
+return 0
+END
+GO

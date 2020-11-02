@@ -1,0 +1,140 @@
+USE [master]
+GO
+/****** Object:  Database [Articles]    Script Date: 07/08/2015 09:27:02 ******/
+CREATE DATABASE [Articles] ON  PRIMARY 
+( NAME = N'Articles', FILENAME = N'D:\MSSQLSERVER\MSSQL10_50.MSSQLSERVER\MSSQL\DATA\Articles.mdf' , SIZE = 6048KB , MAXSIZE = UNLIMITED, FILEGROWTH = 1024KB )
+ LOG ON 
+( NAME = N'Articles_log', FILENAME = N'D:\MSSQLSERVER\MSSQL10_50.MSSQLSERVER\MSSQL\DATA\Articles_1.ldf' , SIZE = 1792KB , MAXSIZE = 2048GB , FILEGROWTH = 10%)
+GO
+ALTER DATABASE [Articles] SET COMPATIBILITY_LEVEL = 110
+GO
+IF (1 = FULLTEXTSERVICEPROPERTY('IsFullTextInstalled'))
+begin
+EXEC [Articles].[dbo].[sp_fulltext_database] @action = 'disable'
+end
+GO
+ALTER DATABASE [Articles] SET ANSI_NULL_DEFAULT OFF
+GO
+ALTER DATABASE [Articles] SET ANSI_NULLS OFF
+GO
+ALTER DATABASE [Articles] SET ANSI_PADDING OFF
+GO
+ALTER DATABASE [Articles] SET ANSI_WARNINGS OFF
+GO
+ALTER DATABASE [Articles] SET ARITHABORT OFF
+GO
+ALTER DATABASE [Articles] SET AUTO_CLOSE OFF
+GO
+ALTER DATABASE [Articles] SET AUTO_CREATE_STATISTICS ON
+GO
+ALTER DATABASE [Articles] SET AUTO_SHRINK OFF
+GO
+ALTER DATABASE [Articles] SET AUTO_UPDATE_STATISTICS ON
+GO
+ALTER DATABASE [Articles] SET CURSOR_CLOSE_ON_COMMIT OFF
+GO
+ALTER DATABASE [Articles] SET CURSOR_DEFAULT  GLOBAL
+GO
+ALTER DATABASE [Articles] SET CONCAT_NULL_YIELDS_NULL OFF
+GO
+ALTER DATABASE [Articles] SET NUMERIC_ROUNDABORT OFF
+GO
+ALTER DATABASE [Articles] SET QUOTED_IDENTIFIER OFF
+GO
+ALTER DATABASE [Articles] SET RECURSIVE_TRIGGERS OFF
+GO
+ALTER DATABASE [Articles] SET  DISABLE_BROKER
+GO
+ALTER DATABASE [Articles] SET AUTO_UPDATE_STATISTICS_ASYNC OFF
+GO
+ALTER DATABASE [Articles] SET DATE_CORRELATION_OPTIMIZATION OFF
+GO
+ALTER DATABASE [Articles] SET TRUSTWORTHY OFF
+GO
+ALTER DATABASE [Articles] SET ALLOW_SNAPSHOT_ISOLATION OFF
+GO
+ALTER DATABASE [Articles] SET PARAMETERIZATION SIMPLE
+GO
+ALTER DATABASE [Articles] SET READ_COMMITTED_SNAPSHOT OFF
+GO
+ALTER DATABASE [Articles] SET HONOR_BROKER_PRIORITY OFF
+GO
+ALTER DATABASE [Articles] SET  READ_WRITE
+GO
+ALTER DATABASE [Articles] SET RECOVERY FULL
+GO
+ALTER DATABASE [Articles] SET  MULTI_USER
+GO
+ALTER DATABASE [Articles] SET PAGE_VERIFY CHECKSUM
+GO
+ALTER DATABASE [Articles] SET DB_CHAINING OFF
+GO
+USE [Articles]
+GO
+/****** Object:  Table [dbo].[Article]    Script Date: 07/08/2015 09:27:03 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+SET ANSI_PADDING ON
+GO
+CREATE TABLE [dbo].[Article](
+	[CodeArticle] [char](4) NOT NULL,
+	[Designation] [varchar](50) NOT NULL,
+ CONSTRAINT [PK_Article] PRIMARY KEY CLUSTERED 
+(
+	[CodeArticle] ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+SET ANSI_PADDING OFF
+GO
+INSERT [dbo].[Article] ([CodeArticle], [Designation]) VALUES (N'A001', N'Article A001')
+INSERT [dbo].[Article] ([CodeArticle], [Designation]) VALUES (N'A011', N'Article A011')
+INSERT [dbo].[Article] ([CodeArticle], [Designation]) VALUES (N'A012', N'Article A012')
+INSERT [dbo].[Article] ([CodeArticle], [Designation]) VALUES (N'A013', N'Article A013')
+INSERT [dbo].[Article] ([CodeArticle], [Designation]) VALUES (N'A101', N'Article A101')
+INSERT [dbo].[Article] ([CodeArticle], [Designation]) VALUES (N'A102', N'Article A102')
+INSERT [dbo].[Article] ([CodeArticle], [Designation]) VALUES (N'B001', N'Article B001')
+INSERT [dbo].[Article] ([CodeArticle], [Designation]) VALUES (N'B011', N'Article B011')
+INSERT [dbo].[Article] ([CodeArticle], [Designation]) VALUES (N'B012', N'Article B012')
+/****** Object:  Table [dbo].[Composition]    Script Date: 07/08/2015 09:27:03 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+SET ANSI_PADDING ON
+GO
+CREATE TABLE [dbo].[Composition](
+	[ArticlePere] [char](4) NOT NULL,
+	[ArticleFils] [char](4) NOT NULL,
+	[QuantiteFils] [int] NOT NULL,
+ CONSTRAINT [PK_Composition] PRIMARY KEY CLUSTERED 
+(
+	[ArticlePere] ASC,
+	[ArticleFils] ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+SET ANSI_PADDING OFF
+GO
+INSERT [dbo].[Composition] ([ArticlePere], [ArticleFils], [QuantiteFils]) VALUES (N'A001', N'A011', 3)
+INSERT [dbo].[Composition] ([ArticlePere], [ArticleFils], [QuantiteFils]) VALUES (N'A001', N'A012', 2)
+INSERT [dbo].[Composition] ([ArticlePere], [ArticleFils], [QuantiteFils]) VALUES (N'A001', N'A013', 25)
+INSERT [dbo].[Composition] ([ArticlePere], [ArticleFils], [QuantiteFils]) VALUES (N'A012', N'A101', 55)
+INSERT [dbo].[Composition] ([ArticlePere], [ArticleFils], [QuantiteFils]) VALUES (N'A013', N'A102', 2)
+INSERT [dbo].[Composition] ([ArticlePere], [ArticleFils], [QuantiteFils]) VALUES (N'B001', N'A001', 4)
+INSERT [dbo].[Composition] ([ArticlePere], [ArticleFils], [QuantiteFils]) VALUES (N'B001', N'B011', 2)
+INSERT [dbo].[Composition] ([ArticlePere], [ArticleFils], [QuantiteFils]) VALUES (N'B001', N'B012', 4)
+/****** Object:  ForeignKey [FK_Composition_Article]    Script Date: 07/08/2015 09:27:03 ******/
+ALTER TABLE [dbo].[Composition]  WITH CHECK ADD  CONSTRAINT [FK_Composition_Article] FOREIGN KEY([ArticleFils])
+REFERENCES [dbo].[Article] ([CodeArticle])
+GO
+ALTER TABLE [dbo].[Composition] CHECK CONSTRAINT [FK_Composition_Article]
+GO
+/****** Object:  ForeignKey [FK_Composition_Composition]    Script Date: 07/08/2015 09:27:03 ******/
+ALTER TABLE [dbo].[Composition]  WITH CHECK ADD  CONSTRAINT [FK_Composition_Composition] FOREIGN KEY([ArticlePere])
+REFERENCES [dbo].[Article] ([CodeArticle])
+GO
+ALTER TABLE [dbo].[Composition] CHECK CONSTRAINT [FK_Composition_Composition]
+GO
